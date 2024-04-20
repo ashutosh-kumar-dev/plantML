@@ -1,29 +1,52 @@
-from flask import Flask, render_template, jsonify, request, Markup
-from model import predict_image
-import utils
+from flask import Flask, render_template, request
+import numpy as np
+import os
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image
+from werkzeug.utils import secure_filename
+
+from flask import (Flask, redirect, render_template, request,
+                   send_from_directory, url_for)
 
 app = Flask(__name__)
 
+# Load the model
+model = load_model('./models/apple-224.h5')
+
+def model_predict(img_path, model):
+    test_image = image.load_img(img_path, target_size=(224, 224))
+    test_image = image.img_to_array(test_image)
+    test_image = test_image / 255.0
+    test_image = np.expand_dims(test_image, axis=0)
+    result = model.predict(test_image)
+    return result
 
 @app.route('/', methods=['GET'])
-def home():
+def index():
     return render_template('index.html')
 
-
-@app.route('/predict', methods=['GET', 'POST'])
+@app.route('/predict', methods=['POST'])
 def predict():
-    if request.method == 'POST':
-        try:
-            file = request.files['file']
-            img = file.read()
-            prediction = predict_image(img)
-            print(prediction)
-            res = Markup(utils.disease_dic[prediction])
-            return render_template('display.html', status=200, result=res)
-        except:
-            pass
-    return render_template('index.html', status=500, res="Internal Server Error")
+    # Retrieve the uploaded image file
+    image_file = request.files['file']
+
+    # Save the file to the uploads folder
+    basepath = os.path.dirname(os.path.realpath('__file__'))
+    file_path = os.path.join(basepath, './uploads', secure_filename(image_file.filename))
+    image_file.save(file_path)
+    
+    # Make prediction
+    result = model_predict(file_path, model)
+
+    categories = ['Healthy', 'Multiple Disease', 'Rust', 'Scab']
+
+    # Process the result
+    pred_class = np.argmax(result)
+    output = categories[pred_class]
+    
+    # Return the prediction result
+    return output
 
 
-if __name__ == "__main__":
-    app.run(debug=True)
+if __name__ == '__main__':
+   app.run()
